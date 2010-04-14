@@ -8,10 +8,13 @@ import android.location.LocationManager;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.SimpleCursorAdapter;
 import de.stereotypez.geopipe.provider.Ap;
 import de.stereotypez.geopipe.provider.GeoProvider;
@@ -19,12 +22,47 @@ import de.stereotypez.geopipe.provider.GeoProvider;
 
 public class Geopipe extends Activity 
 {
+	public static final int PROGRESS_START = 0;
+	public static final int PROGRESS_DO    = 1;
+	public static final int PROGRESS_END   = 2;
+	
 	private WifiManager mainWifi;
 	private LocationManager mainLoc;
 	
 	private WifiScanReceiver wifiScanReceiver;
 	
 	private Menu menu;
+	
+	// list view
+	private ListView aplist;
+	private SimpleCursorAdapter sca;
+	
+	// progress
+	private ProgressBar bar;
+	private Handler handler = new Handler()
+	{
+		@Override
+		public void handleMessage(Message msg) 
+		{
+			switch (msg.what)
+			{
+				case PROGRESS_START: 
+					bar.setProgress(0);
+					bar.setVisibility(ProgressBar.VISIBLE);
+					break;
+				case PROGRESS_DO:
+					bar.setProgress(msg.arg1);
+					break;
+				case PROGRESS_END:
+					bar.setVisibility(ProgressBar.INVISIBLE);
+					// force list update
+					sca.changeCursor(managedQuery(Uri.parse(GeoProvider.CONTENT_URI + "/all"), 
+							                      null, null, null, "created asc")); 
+					break;
+			}
+		}		
+	};
+	
 	
     /** Called when the activity is first created. */
     @Override
@@ -33,16 +71,19 @@ public class Geopipe extends Activity
     	super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
         
+        // get progress bar for later use and hide it
+        bar = (ProgressBar)findViewById(R.id.progress);
+        bar.setVisibility(ProgressBar.INVISIBLE);
+        
         Uri allAPs = Uri.parse(GeoProvider.CONTENT_URI + "/all");
-        Cursor c = managedQuery(allAPs, null, null, null, "_id desc");
+        Cursor c = managedQuery(allAPs, null, null, null, "created asc");
 
-        ListView aplist = (ListView)findViewById(R.id.aplist);        
-        SimpleCursorAdapter sca = new SimpleCursorAdapter(this, 
-        		                                          R.layout.aplist_item, 
-        		                                          c, 
-        		                                          new String[]{Ap.SSID}, 
-        		                                          new int[]{R.id.apitem});
-        //sca.runQueryOnBackgroundThread(null);
+        aplist = (ListView)findViewById(R.id.aplist);        
+        sca = new SimpleCursorAdapter(this, 
+        		                      R.layout.aplist_item, 
+        		                      c, 
+        		                      new String[]{Ap.SSID}, 
+        		                      new int[]{R.id.apitem});
         aplist.setAdapter(sca);
       
         
@@ -61,7 +102,7 @@ public class Geopipe extends Activity
         
         // thus it needs to be informed of new APs in our area
         registerReceiver(wifiScanReceiver, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));		
-        wifiScanReceiver.start();
+        wifiScanReceiver.start();        
     }
     
     public void startScanning()
@@ -118,13 +159,15 @@ public class Geopipe extends Activity
 				@Override
 				public void run() 
 				{
-					// TODO show progress http://developer.android.com/reference/android/widget/ProgressBar.html
-					
 					// query our local AP database
 		    		Cursor c = getContentResolver().query(Uri.parse(GeoProvider.CONTENT_URI + "/all"), 
-		    				                              null, null, null, "created ASC");
+		    				                              null, null, null, "created ASC");		    		
 		    		if (c.moveToFirst())
 		    		{
+		    			// display and reset progress bar
+		    			handler.sendMessage(handler.obtainMessage(PROGRESS_START));
+		    			int cnt = 0;
+						
 		    			HttpPipe http = new HttpPipe();
 		    			
 		    			do
@@ -151,8 +194,15 @@ public class Geopipe extends Activity
 		    				{
 		    					Log.e(getClass().getName(), "Adding Network to Geomena failed.", any);
 		    				}
+		    				
+		    				// update progress bar
+		    				cnt++;
+		    				handler.sendMessage(handler.obtainMessage(PROGRESS_DO, (int)Math.round(cnt * 100.0 / c.getCount()), 0));
 		        		}
 		    			while (c.moveToNext());
+		    			
+		    			// hide progress bar
+		    			handler.sendMessage(handler.obtainMessage(PROGRESS_END));
 		    		}    		
 				}
 			};
