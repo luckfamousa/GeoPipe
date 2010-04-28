@@ -94,7 +94,7 @@ public class WifiScanReceiver extends BroadcastReceiver
 				{
 					mainWifi.startScan();
 				}
-			}, 6000);
+			}, Geopipe.WIFI_SCAN_DELAY * 1000);
 		}
 	}
 }

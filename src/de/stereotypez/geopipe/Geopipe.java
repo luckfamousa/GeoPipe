@@ -1,7 +1,11 @@
 package de.stereotypez.geopipe;
 
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.Cursor;
 import android.location.LocationManager;
@@ -25,11 +29,17 @@ public class Geopipe extends Activity
 	public static final int PROGRESS_START = 0;
 	public static final int PROGRESS_DO    = 1;
 	public static final int PROGRESS_END   = 2;
+	public static final int WIFI_SCAN_DELAY = 6;
 	
 	private WifiManager mainWifi;
 	private LocationManager mainLoc;
 	
 	private WifiScanReceiver wifiScanReceiver;
+	
+	private NotificationManager notificationManager;
+	private Notification ongoing_notification;
+	
+	private PendingIntent geopipe_intent;
 	
 	private Menu menu;
 	
@@ -93,26 +103,37 @@ public class Geopipe extends Activity
         // scan for wifi hotspots
         mainWifi = (WifiManager)getSystemService(Context.WIFI_SERVICE);        
         
+        // show background/broadcast receiver lifecycle
+        ongoing_notification = new Notification(R.drawable.statusbar_icon, "Wifi scanning started", System
+				.currentTimeMillis());
+		ongoing_notification.flags = ongoing_notification.flags ^ Notification.FLAG_ONGOING_EVENT;
+		notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         
-        
+		// Return from whence we came
+		geopipe_intent = PendingIntent.getActivity(this, 0, new Intent(this,
+				Geopipe.class), 0);
         // this instance will detect and store new APs
         wifiScanReceiver = new WifiScanReceiver(mainWifi, 
         		                                new LocationReceiver(mainLoc), 
         		                                getContentResolver()); 
         
         // thus it needs to be informed of new APs in our area
-        registerReceiver(wifiScanReceiver, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));		
-        wifiScanReceiver.start();        
+        registerReceiver(wifiScanReceiver, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
+        startScanning();
     }
     
     public void startScanning()
     {
-    	menu.getItem(0).setTitle("Stop Scanning");
+    	showStatusBar();
+    	if(menu != null) { // startScanning can be called before menu exists
+    		menu.getItem(0).setTitle("Stop Scanning");
+    	}
     	wifiScanReceiver.start();
     }
     
     public void stopScanning()
     {
+    	hideStatusBar();
     	menu.getItem(0).setTitle("Start Scanning");
     	wifiScanReceiver.stop();
     }
@@ -126,6 +147,15 @@ public class Geopipe extends Activity
         menu.add(0, 2, 0, "Post & Clear");
         menu.add(0, 3, 0, "Exit");
         return super.onCreateOptionsMenu(menu);
+    }
+
+    public void showStatusBar() {
+        ongoing_notification.setLatestEventInfo(this, "GeoPipe", "Scanning APs every "+WIFI_SCAN_DELAY+" seconds.", geopipe_intent);
+    	notificationManager.notify(1, ongoing_notification);
+    }
+
+    public void hideStatusBar() {
+    	notificationManager.cancel(1);
     }
 
     public boolean onMenuItemSelected(int featureId, MenuItem item) 
