@@ -240,6 +240,7 @@ public class Geopipe extends Activity
     	}
     	else if (item.getItemId() == 3)
     	{
+    		stopScanning();
     		System.runFinalization();
     		System.exit(0);
     	}
